@@ -1,18 +1,19 @@
 apiVersion: v1
 kind: PersistentVolume
 metadata:
-  name: mysql-host-path
+  name: mysql-hostpath
   labels:
     type: local
 spec:
-  storageClassName: mysql-host-path
+  storageClassName: mysql-hostpath
   persistentVolumeReclaimPolicy: Retain
   capacity:
-    storage: 10Gi
+    storage: 10Gi 
   accessModes:
     - ReadWriteMany
   hostPath:
-    path: "/run/desktop/mnt/host/e/k8s-vol/mysql-host-path"
+    path: "/run/desktop/mnt/host/e/k8s-vol/mysql-hostpath"
+    type: DirectoryOrCreate
 
 ---
 apiVersion: v1
@@ -49,8 +50,8 @@ spec:
         - containerPort: 3306
           name: mysql
         volumeMounts:
-        - name: mysql-store
-          mountPath: /var/lib/mysql
+        - name: mysql-hostpath
+          mountPath: /var/lib/mysql 
         env:
           - name: MYSQL_ROOT_PASSWORD
             valueFrom:
@@ -72,11 +73,17 @@ spec:
               secretKeyRef:
                 name: mysql-secret
                 key: MYSQL_PASSWORD
+        #volumes:
+        #    - name: mysql-hostpath
+        #      persistentVolumeClaim:
+        #        claimName: mysql-hostpath
   volumeClaimTemplates:
   - metadata:
-      name: mysql-store
+      name: mysql-hostpath 
     spec:
-      accessModes: ["ReadWriteOnce"] 
+      storageClassName: mysql-hostpath
+      accessModes: 
+      - ReadWriteMany
       resources:
         requests:
           storage: 1Gi 
@@ -97,6 +104,36 @@ spec:
   clusterIP: None
   
 ---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: wordpress-hostpath
+  labels:
+    type: local
+spec:
+  storageClassName: wordpress-hostpath
+  persistentVolumeReclaimPolicy: Retain
+  capacity:
+    storage: 10Gi 
+  accessModes:  
+    - ReadWriteMany
+  hostPath:
+    path: "/run/desktop/mnt/host/e/k8s-vol/wordpress-hostpath"
+    type: DirectoryOrCreate
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: wordpress-hostpath
+spec:
+  storageClassName: wordpress-hostpath
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 1Gi 
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -104,7 +141,7 @@ metadata:
   labels:
     app: wordpress
 spec:
-  replicas: 1
+  replicas: 1 
   selector:
     matchLabels:
       app: wordpress
@@ -152,8 +189,19 @@ spec:
           tcpSocket:
             host: mysql-service
             port: 3306
-          initialDelaySeconds: 3
+          initialDelaySeconds: 60
           periodSeconds: 600
+        volumeMounts:
+        - mountPath: /var/www/html
+          name: wordpress-hostpath
+      volumes:
+      - name: wordpress-hostpath
+        persistentVolumeClaim:
+          claimName: wordpress-hostpath
+        #hostPath:
+        #  path: /run/desktop/mnt/host/e/k8s-vol/wordpress-wp-content
+        #  type: DirectoryOrCreate
+ 
 ---
 apiVersion: v1
 kind: Service
@@ -231,7 +279,7 @@ spec:
           tcpSocket:
             host: wordpress-service
             port: 80 
-          initialDelaySeconds: 3
+          initialDelaySeconds: 30
           periodSeconds: 600
       volumes:
       - name: nginx-conf

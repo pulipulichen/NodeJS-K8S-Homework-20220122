@@ -12,7 +12,7 @@ function sleep(ms = 500) {
 
 let main = async (eventType, filename) => {
   
-  if (fs.existsSync(destination) && false) {
+  if (fs.existsSync(destination)) {
     try {
       let outputBefore = execSync('kubectl.exe delete -f ' + destination
         , { encoding: 'utf-8' });  // the default is 'buffer'
@@ -26,6 +26,9 @@ let main = async (eventType, filename) => {
       let cleaned = false
       while (cleaned === false) {
         await sleep(1000)
+        if (again) {
+          return false
+        }
         let cleanOutput = execSync('kubectl.exe get pod'
             , { encoding: 'utf-8' });  // the default is 'buffer'
         console.log(cleanOutput)

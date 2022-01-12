@@ -5,7 +5,7 @@ metadata:
   labels:
     app: wordpress
 spec:
-  replicas: 1
+  replicas: 1 
   selector:
     matchLabels:
       app: wordpress
@@ -53,5 +53,16 @@ spec:
           tcpSocket:
             host: mysql-service
             port: 3306
-          initialDelaySeconds: 3
+          initialDelaySeconds: 60
           periodSeconds: 600
+        volumeMounts:
+        - mountPath: /var/www/html
+          name: wordpress-hostpath
+      volumes:
+      - name: wordpress-hostpath
+        persistentVolumeClaim:
+          claimName: wordpress-hostpath
+        #hostPath:
+        #  path: /run/desktop/mnt/host/e/k8s-vol/wordpress-wp-content
+        #  type: DirectoryOrCreate
+ 

@@ -38,7 +38,7 @@ spec:
           tcpSocket:
             host: wordpress-service
             port: 80 
-          initialDelaySeconds: 3
+          initialDelaySeconds: 30
           periodSeconds: 600
       volumes:
       - name: nginx-conf

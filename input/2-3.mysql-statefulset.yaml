@@ -21,8 +21,8 @@ spec:
         - containerPort: 3306
           name: mysql
         volumeMounts:
-        - name: mysql-store
-          mountPath: /var/lib/mysql
+        - name: mysql-hostpath
+          mountPath: /var/lib/mysql 
         env:
           - name: MYSQL_ROOT_PASSWORD
             valueFrom:
@@ -46,9 +46,11 @@ spec:
                 key: MYSQL_PASSWORD
   volumeClaimTemplates:
   - metadata:
-      name: mysql-store
+      name: mysql-hostpath 
     spec:
-      accessModes: ["ReadWriteOnce"] 
+      storageClassName: mysql-hostpath
+      accessModes: 
+      - ReadWriteMany
       resources:
         requests:
           storage: 1Gi 
