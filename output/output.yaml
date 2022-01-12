@@ -73,10 +73,6 @@ spec:
               secretKeyRef:
                 name: mysql-secret
                 key: MYSQL_PASSWORD
-        #volumes:
-        #    - name: mysql-hostpath
-        #      persistentVolumeClaim:
-        #        claimName: mysql-hostpath
   volumeClaimTemplates:
   - metadata:
       name: mysql-hostpath 
@@ -239,6 +235,36 @@ data:
             error_log /var/log/nginx/error.log warn;
         }
 ---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: nginx-log-hostpath
+  labels:
+    type: local
+spec:
+  storageClassName: nginx-log-hostpath 
+  persistentVolumeReclaimPolicy: Retain
+  capacity:
+    storage: 10Gi 
+  accessModes:  
+    - ReadWriteMany
+  hostPath:
+    path: "/run/desktop/mnt/host/e/k8s-vol/nginx-log-hostpath"
+    type: DirectoryOrCreate
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: nginx-log-hostpath
+spec:
+  storageClassName: nginx-log-hostpath
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 1Gi  
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -289,7 +315,9 @@ spec:
             - key: nginx.conf
               path: nginx.conf 
       - name: log
-        emptyDir: {}
+        persistentVolumeClaim:
+          claimName: nginx-log-hostpath
+           
 ---
 apiVersion: v1
 kind: Service
@@ -303,3 +331,66 @@ spec:
       protocol: TCP
       port: 80
       targetPort: 80
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: fluentd-conf
+data:
+  fluent.conf: |
+                <source>
+                  type tail
+                  path /logs/access.log
+                  tag nginx.access
+                  format nginx
+                </source>
+
+                <source>
+                  @type tail
+                  format /^(?<time>\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2}) \[(?<log_level>\w+)\] (?<pid>\d+).(?<tid>\d+): (?<message>.*)$/
+                  tag nginx.error
+                  path /logs/error.log
+                </source>
+
+                <match nginx.access>
+                  @type stdout
+                </match>
+
+                <match nginx.error>
+                  @type stdout
+                </match>
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: fluentd-daemonset
+spec:
+  selector:
+    matchLabels:
+      app: fluentd
+  template:
+    metadata:
+      labels:
+        app: fluentd
+    spec:
+      containers:
+      - name: fluentd
+        image: fluentd:v1.14-1  
+        volumeMounts: 
+          # 掛載fluentd 設定檔
+          - name: fluentd-config-volume
+            mountPath: /fluentd/etc
+          # 與nginx共用log-volume
+          - name: log
+            mountPath: /logs 
+      volumes:
+        - name: fluentd-config-volume
+          configMap: 
+            name: fluentd-conf
+            items:
+              - key: fluent.conf
+                path: fluent.conf
+        - name: log
+          persistentVolumeClaim:
+            claimName: nginx-log-hostpath
+            

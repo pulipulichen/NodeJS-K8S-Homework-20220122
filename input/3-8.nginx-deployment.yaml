@@ -48,4 +48,6 @@ spec:
             - key: nginx.conf
               path: nginx.conf 
       - name: log
-        emptyDir: {}
+        persistentVolumeClaim:
+          claimName: nginx-log-hostpath
+           
