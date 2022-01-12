@@ -1,0 +1,19 @@
+{
+  "name": "nodejs-k8s-homework-20220122",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pulipulichen/NodeJS-K8S-Homework-20220122.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/pulipulichen/NodeJS-K8S-Homework-20220122/issues"
+  },
+  "homepage": "https://github.com/pulipulichen/NodeJS-K8S-Homework-20220122#readme"
+}
