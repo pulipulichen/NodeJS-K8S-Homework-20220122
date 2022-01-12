@@ -1,3 +1,25 @@
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: priority-low
+value: 1000
+description: "nginx fluentd"
+---
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: priority-medium
+value: 2000
+description: "wordpress"
+---
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: priority-high
+value: 3000
+description: "mysql"
+
+---
 apiVersion: v1
 kind: PersistentVolume
 metadata:
@@ -41,8 +63,35 @@ spec:
     metadata:
       labels:
         app: mysql
-    spec:
-      terminationGracePeriodSeconds: 1
+    spec: 
+      priorityClassName: priority-high
+      # 親和力設定
+      affinity:
+        podAffinity:
+          # 儘可能貼近同一臺主機
+          preferredDuringSchedulingIgnoredDuringExecution: 
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - wordpress
+                  - nginx
+              topologyKey: "kubernetes.io/hostname"
+        podAntiAffinity:
+          # 儘可能讓同樣服務分散在其他主機   
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - mysql
+              topologyKey: "kubernetes.io/hostname"
       containers:
       - name: mysql
         image: mysql:8.0.27 
@@ -53,27 +102,33 @@ spec:
         - name: mysql-hostpath
           mountPath: /var/lib/mysql 
         env:
-          - name: MYSQL_ROOT_PASSWORD
-            valueFrom:
-              secretKeyRef:
-                name: mysql-secret
-                key: MYSQL_ROOT_PASSWORD
-          - name: MYSQL_DATABASE
-            valueFrom:
-              secretKeyRef:
-                name: mysql-secret
-                key: MYSQL_DATABASE
-          - name: MYSQL_USER
-            valueFrom:
-              secretKeyRef:
-                name: mysql-secret
-                key: MYSQL_USER
-          - name: MYSQL_PASSWORD
-            valueFrom:
-              secretKeyRef:
-                name: mysql-secret
-                key: MYSQL_PASSWORD
-  volumeClaimTemplates:
+        - name: MYSQL_ROOT_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: mysql-secret
+              key: MYSQL_ROOT_PASSWORD
+        - name: MYSQL_DATABASE
+          valueFrom:
+            secretKeyRef:
+              name: mysql-secret
+              key: MYSQL_DATABASE
+        - name: MYSQL_USER
+          valueFrom:
+            secretKeyRef:
+              name: mysql-secret
+              key: MYSQL_USER
+        - name: MYSQL_PASSWORD
+          valueFrom: 
+            secretKeyRef:
+              name: mysql-secret
+              key: MYSQL_PASSWORD
+        # 優雅關機
+        lifecycle:
+          preStop:
+            exec:  
+              command: ["mysqladmin", "-u", "root", "-p$MYSQL_ROOT_PASSWORD", "shutdown"]  
+      terminationGracePeriodSeconds: 60
+  volumeClaimTemplates:   
   - metadata:
       name: mysql-hostpath 
     spec:
@@ -136,20 +191,52 @@ metadata:
   name: wordpress-deployment
   labels:
     app: wordpress
-spec:
+spec: 
   replicas: 1 
   selector:
     matchLabels:
       app: wordpress
-  template:
+  template: 
     metadata:
       labels:
         app: wordpress
     spec:
-      containers:
+      priorityClassName: priority-medium
+      # 親和力設定
+      affinity:
+        podAffinity:
+          # 儘可能貼近其他服務
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - mysql
+                  - nginx
+              topologyKey: "kubernetes.io/hostname"
+        podAntiAffinity:
+          # 儘可能讓同樣服務分散在其他主機
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - wordpress
+              topologyKey: "kubernetes.io/hostname"
+      initContainers:
+      - name: init-mysql-service
+        image: busybox:1.28
+        command: ['sh', '-c', 'until nslookup mysql-service; do echo waiting for mysql-service; sleep 2; done']
+      containers:    
       - name: wordpress
         image: wordpress:5.8.2-apache
-        ports:
+        ports: 
         - containerPort: 80
         resources:
           limits:
@@ -190,6 +277,12 @@ spec:
         volumeMounts:
         - mountPath: /var/www/html
           name: wordpress-hostpath
+        # 優雅關閉 
+        lifecycle:
+          preStop:
+            exec: 
+              command: ["/etc/init.d/apache2", "stop"]
+      terminationGracePeriodSeconds: 60
       volumes:
       - name: wordpress-hostpath
         persistentVolumeClaim:
@@ -197,6 +290,20 @@ spec:
         #hostPath:
         #  path: /run/desktop/mnt/host/e/k8s-vol/wordpress-wp-content
         #  type: DirectoryOrCreate
+ 
+---
+apiVersion: autoscaling/v1
+kind: HorizontalPodAutoscaler
+metadata:
+  name: wordpress-hpa
+spec: 
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: wordpress-deployment
+  minReplicas: 1
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 60
  
 ---
 apiVersion: v1
@@ -280,7 +387,39 @@ spec:
     metadata:
       labels:
         app: nginx
-    spec:
+    spec:    
+      priorityClassName: priority-low
+      # 親和力設定
+      affinity:
+        podAffinity:
+          # 儘可能貼近MySQL
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - mysql
+                  - wordpress
+              topologyKey: "kubernetes.io/hostname"
+        podAntiAffinity:
+          # 儘可能讓同樣服務分散在其他主機
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - nginx
+              topologyKey: "kubernetes.io/hostname"
+      initContainers:
+      - name: init-wordpress-service
+        image: busybox:1.28
+        command: ['sh', '-c', 'until nslookup wordpress-service; do echo waiting for wordpress-service; sleep 2; done']
       containers:
       - name: nginx
         image: nginx:1.14.2
@@ -307,6 +446,12 @@ spec:
             port: 80 
           initialDelaySeconds: 30
           periodSeconds: 600
+        # 優雅關閉 
+        lifecycle:
+          preStop:
+            exec: 
+              command: ["/usr/sbin/nginx", "-s", "quit"]
+      terminationGracePeriodSeconds: 60
       volumes:
       - name: nginx-conf
         configMap:
@@ -317,7 +462,8 @@ spec:
       - name: log
         persistentVolumeClaim:
           claimName: nginx-log-hostpath
-           
+      
+              
 ---
 apiVersion: v1
 kind: Service
@@ -373,11 +519,12 @@ spec:
       labels:
         app: fluentd
     spec:
+      priorityClassName: priority-low
       containers:
       - name: fluentd
         image: fluentd:v1.14-1  
         volumeMounts: 
-          # 掛載fluentd 設定檔
+          # 掛載fluentd 設定檔 
           - name: fluentd-config-volume
             mountPath: /fluentd/etc
           # 與nginx共用log-volume

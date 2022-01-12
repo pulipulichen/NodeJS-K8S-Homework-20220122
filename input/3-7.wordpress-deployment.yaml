@@ -4,20 +4,52 @@ metadata:
   name: wordpress-deployment
   labels:
     app: wordpress
-spec:
+spec: 
   replicas: 1 
   selector:
     matchLabels:
       app: wordpress
-  template:
+  template: 
     metadata:
       labels:
         app: wordpress
     spec:
-      containers:
+      priorityClassName: priority-medium
+      # 親和力設定
+      affinity:
+        podAffinity:
+          # 儘可能貼近其他服務
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - mysql
+                  - nginx
+              topologyKey: "kubernetes.io/hostname"
+        podAntiAffinity:
+          # 儘可能讓同樣服務分散在其他主機
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - wordpress
+              topologyKey: "kubernetes.io/hostname"
+      initContainers:
+      - name: init-mysql-service
+        image: busybox:1.28
+        command: ['sh', '-c', 'until nslookup mysql-service; do echo waiting for mysql-service; sleep 2; done']
+      containers:    
       - name: wordpress
         image: wordpress:5.8.2-apache
-        ports:
+        ports: 
         - containerPort: 80
         resources:
           limits:
@@ -58,6 +90,12 @@ spec:
         volumeMounts:
         - mountPath: /var/www/html
           name: wordpress-hostpath
+        # 優雅關閉 
+        lifecycle:
+          preStop:
+            exec: 
+              command: ["/etc/init.d/apache2", "stop"]
+      terminationGracePeriodSeconds: 60
       volumes:
       - name: wordpress-hostpath
         persistentVolumeClaim:

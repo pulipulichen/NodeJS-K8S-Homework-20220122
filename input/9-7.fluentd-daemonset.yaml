@@ -11,11 +11,12 @@ spec:
       labels:
         app: fluentd
     spec:
+      priorityClassName: priority-low
       containers:
       - name: fluentd
         image: fluentd:v1.14-1  
         volumeMounts: 
-          # 掛載fluentd 設定檔
+          # 掛載fluentd 設定檔 
           - name: fluentd-config-volume
             mountPath: /fluentd/etc
           # 與nginx共用log-volume
